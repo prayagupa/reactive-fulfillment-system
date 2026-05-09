@@ -94,6 +94,18 @@ flowchart LR
     KF -->|async consume| FC[FC Router]
 ```
 
+#### CQRS Split
+
+| Side | Class | Responsibility |
+|------|-------|---------------|
+| **Write** | `CreateOrderCommandHandler` | Idempotency guard (ScyllaDB LWT), persist order, publish `OrderReceived` to Kafka |
+| **Read** | `GetOrderQueryHandler` | Query ScyllaDB by `order_id`; return `CreateOrderResponse` read model |
+| *(deprecated)* | `OrderService` | Monolithic service class — marked `@Deprecated(forRemoval = true)`; empty shell retained for git history |
+
+Shared interfaces: `Command`, `CommandHandler<C,R>`, `Query<R>`, `QueryHandler<Q,R>` from `libs/common-cqrs` (`com.shipping.cqrs`).
+
+`OrderController` injects `CreateOrderCommandHandler` and `GetOrderQueryHandler` directly — no intermediate service layer.
+
 #### Key Design Decisions
 - **Idempotency:** Every `POST /orders` requires a client-supplied `Idempotency-Key` header stored in Valkey for 24h.
 - **Order splitting:** If no single FC can fulfill all items, the router splits into child orders; a parent-child order graph is stored in ScyllaDB.
@@ -136,6 +148,14 @@ stateDiagram-v2
     SHIPPED --> [*]
 ```
 
+#### CQRS Split
+
+| Side | Class | Responsibility |
+|------|-------|---------------|
+| **Write** | `ReserveInventoryCommandHandler` | Valkey Lua atomic check-and-decrement (fast path); ScyllaDB LWT fallback; publishes `InventoryReserved` or `InventoryInsufficient` |
+| **Read** | `GetStockQueryHandler` | Query OpenSearch for inventory levels; return read-model view |
+| *(deprecated)* | `InventoryService` | Marked `@Deprecated(forRemoval = true)`; empty shell retained for git history |
+
 #### Key Design Decisions
 - **Hot key mitigation:** High-velocity SKUs use Valkey Lua scripts for reservation rather than writing directly to ScyllaDB on every order. Periodic flush from Valkey → ScyllaDB.
 - **Eventual vs. strong consistency:** Reservations (money-like) use ScyllaDB LWT (strong). Inventory search / reporting uses self-hosted OpenSearch (eventual).
@@ -177,6 +197,16 @@ flowchart TD
 ### 3.4 Pick Engine
 
 **Responsibility:** Guide associates through picks; record confirmations and exceptions.
+
+#### CQRS Split
+
+| Side | Class | Responsibility |
+|------|-------|---------------|
+| **Write** | `CreatePickTasksCommandHandler` | Materialises one `PickTask` row in ScyllaDB per line item from the `PickList` Kafka event |
+| **Write** | `ConfirmScanCommandHandler` | Records barcode scan confirmation in ScyllaDB; publishes `PickItemEvent` to Kafka |
+| **Read** | `NextTaskQueryHandler` | Returns the next unconfirmed pick task for a given associate |
+| **Read** | `PickListStatusQueryHandler` | Returns completion status of a pick list |
+| *(deprecated)* | `PickTaskService` | Marked `@Deprecated(forRemoval = true)`; empty shell retained for git history |
 
 #### Tech Stack
 
@@ -248,6 +278,14 @@ flowchart TD
 ### 3.7 Carrier & Tracking Service
 
 **Responsibility:** Transmit manifests to carriers; ingest and normalize tracking events.
+
+#### CQRS Split
+
+| Side | Class | Responsibility |
+|------|-------|---------------|
+| **Write** | `TransmitManifestCommandHandler` | Sends carrier manifest via EDI (Apache Camel X12 856); records handoff in ScyllaDB |
+| **Read** | `GetTrackingQueryHandler` | Reads the `tracking` wide-row table in ScyllaDB; projects rows to `TrackingEventView` read model |
+| *(deprecated)* | `ManifestService` | Marked `@Deprecated(forRemoval = true)`; empty shell retained for git history |
 
 #### Tech Stack
 
@@ -452,6 +490,50 @@ flowchart TD
 
 ---
 
+### 4.7 CQRS — Shared Library & Per-Service Pattern
+
+All Java services implement an **in-process CQRS model** backed by a shared library in `libs/common-cqrs` (`com.shipping.cqrs`).
+
+#### Shared interfaces (`libs/common-cqrs`)
+
+| Interface | Role |
+|-----------|------|
+| `Command` | Marker interface for all write-side intents |
+| `Query<R>` | Marker interface for all read-side intents; `R` is the return type |
+| `CommandHandler<C extends Command, R>` | `@FunctionalInterface`; one implementation per command type |
+| `QueryHandler<Q extends Query<R>, R>` | `@FunctionalInterface`; one implementation per query type |
+
+#### Per-service package structure
+
+```
+application/
+  command/
+    XxxCommand.java          ← record implements Command
+    XxxCommandHandler.java   ← @Service implements CommandHandler<XxxCommand, R>
+  query/
+    XxxQuery.java            ← record implements Query<R>
+    XxxQueryHandler.java     ← @Service implements QueryHandler<XxxQuery, R>
+    XxxResult.java           ← read-model record (where needed)
+```
+
+#### Rules enforced across all services
+
+- **Command handlers** may persist state and publish Kafka events. They return only a minimal acknowledgement.
+- **Query handlers** must not publish events or mutate state.
+- Controllers and Kafka consumers inject specific handlers directly — no `*Service` god-class.
+- Old `*Service` classes are marked `@Deprecated(forRemoval = true)` and left as empty shells.
+
+#### CQRS handler registry (Java services)
+
+| Service | Commands | Queries |
+|---------|----------|---------|
+| Order Ingestion | `CreateOrderCommandHandler` | `GetOrderQueryHandler` |
+| Inventory | `ReserveInventoryCommandHandler` | `GetStockQueryHandler` |
+| Pick Engine | `CreatePickTasksCommandHandler`, `ConfirmScanCommandHandler` | `NextTaskQueryHandler`, `PickListStatusQueryHandler` |
+| Carrier & Tracking | `TransmitManifestCommandHandler` | `GetTrackingQueryHandler` |
+
+---
+
 ## 5. FC Cell Architecture
 
 Each FC operates as an independent cell with:
@@ -572,20 +654,20 @@ flowchart TB
 
 ## 9. Technology Stack Summary
 
-| Domain | Language | Framework | Primary DB | Messaging | Notable |
-|--------|---------|-----------|-----------|-----------|---------|
-| Order Ingestion | Java 25 | Spring Boot 4 / WebFlux | ScyllaDB 6 + PostgreSQL 17 | Apache Kafka 3.8 | Virtual Threads, Valkey dedup, Kong Gateway |
-| Inventory | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | Valkey Lua, OpenSearch, ScyllaDB LWT |
-| Wave Planner | Python 3.12 | FastAPI | PostgreSQL 17 + Patroni | Apache Kafka 3.8 | NetworkX TSP, Quartz Scheduler |
-| Pick Engine | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | WebSocket (Netty), Vocollect, ROS 2 |
-| Pack Service | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | ZPL, EasyPost, Drools hazmat |
-| Sortation | Java 25 | Spring Boot 4 | ScyllaDB 6 + PostgreSQL 17 | Apache Kafka 3.8 | OPC-UA (Eclipse Milo) |
-| Carrier/Tracking | Java 25 | Spring Boot 4 | ScyllaDB 6 (wide row) | Apache Kafka 3.8 | Apache Camel EDI X12, Temporal |
-| Returns | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | Drools 10, MinIO + Trino analytics |
-| Replenishment | Python 3.12 | FastAPI | ScyllaDB 6 + PostgreSQL 17 | Kafka + Apache Flink 1.20 | MLflow + Ray Serve, Apache Camel EDI |
-| Pack Station UI | TypeScript | React 18 | — | WebSocket | Nginx (K8s Ingress) |
-| Observability | — | Grafana + OTel + Jaeger | OpenSearch 2.x | — | Prometheus, Alertmanager, Chaos Mesh |
-| CI/CD | — | GitHub Actions + ArgoCD | — | — | Harbor registry, Trivy, k6, Pact |
+| Domain | Language | Framework | Primary DB | Messaging | CQRS Handlers | Notable |
+|--------|---------|-----------|-----------|-----------|---------------|---------|
+| Order Ingestion | Java 25 | Spring Boot 4 / WebFlux | ScyllaDB 6 + PostgreSQL 17 | Apache Kafka 3.8 | `CreateOrderCommandHandler`, `GetOrderQueryHandler` | Virtual Threads, Valkey dedup, Kong Gateway |
+| Inventory | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | `ReserveInventoryCommandHandler`, `GetStockQueryHandler` | Valkey Lua, OpenSearch, ScyllaDB LWT |
+| Wave Planner | Python 3.12 | FastAPI | PostgreSQL 17 + Patroni | Apache Kafka 3.8 | — (Python service) | NetworkX TSP, Quartz Scheduler |
+| Pick Engine | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | `CreatePickTasksCommandHandler`, `ConfirmScanCommandHandler`, `NextTaskQueryHandler`, `PickListStatusQueryHandler` | WebSocket (Netty), Vocollect, ROS 2 |
+| Pack Service | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | — (in progress) | ZPL, EasyPost, Drools hazmat |
+| Sortation | Java 25 | Spring Boot 4 | ScyllaDB 6 + PostgreSQL 17 | Apache Kafka 3.8 | — (in progress) | OPC-UA (Eclipse Milo) |
+| Carrier/Tracking | Java 25 | Spring Boot 4 | ScyllaDB 6 (wide row) | Apache Kafka 3.8 | `TransmitManifestCommandHandler`, `GetTrackingQueryHandler` | Apache Camel EDI X12, Temporal |
+| Returns | Java 25 | Spring Boot 4 | ScyllaDB 6 | Apache Kafka 3.8 | — (in progress) | Drools 10, MinIO + Trino analytics |
+| Replenishment | Python 3.12 | FastAPI | ScyllaDB 6 + PostgreSQL 17 | Kafka + Apache Flink 1.20 | — (Python service) | MLflow + Ray Serve, Apache Camel EDI |
+| Pack Station UI | TypeScript | React 18 | — | WebSocket | — | Nginx (K8s Ingress) |
+| Observability | — | Grafana + OTel + Jaeger | OpenSearch 2.x | — | — | Prometheus, Alertmanager, Chaos Mesh |
+| CI/CD | — | GitHub Actions + ArgoCD | — | — | — | Harbor registry, Trivy, k6, Pact |
 
 ---
 
@@ -599,6 +681,17 @@ flowchart TB
 | 4 | Returns condition scoring | Manual selection vs. CV camera | **Manual Phase 1**; CV (OpenCV + ONNX Runtime open-source model) in Phase 4 |
 | 5 | Replenishment ML model | MLflow DeepAR vs. Hugging Face Chronos | **MLflow + Ray Serve with DeepAR** — portable, cloud-agnostic, proven at scale |
 | 6 | Service mesh | Istio vs. Linkerd | **Istio** — richer traffic management, CNCF graduated, Envoy-based (same as prod pattern) |
+
+---
+
+## 11. Event-Driven Architecture (EDA) & Domain-Driven Design (DDD)
+
+See **[supplement-eda-ddd.md](./supplement-eda-ddd.md)** for the full treatment, including:
+
+- EDA core concepts, event anatomy, delivery guarantees, and saga / choreography pattern
+- Strategic DDD (bounded contexts, context mapping) and tactical DDD building blocks
+- Eight rules for using EDA and DDD correctly together in this codebase
+- Anti-patterns reference table
 
 ---
 
