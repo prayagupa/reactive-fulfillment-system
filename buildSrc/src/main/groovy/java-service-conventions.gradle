@@ -1,0 +1,47 @@
+/**
+ * Convention plugin: java-service-conventions
+ * Apply to every Spring Boot 4 service under /services/.
+ */
+plugins {
+    id 'java'
+    id 'org.springframework.boot'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.compilerArgs += ['-parameters', '-Xlint:unchecked']
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    testLogging { events 'passed', 'skipped', 'failed' }
+    systemProperty 'testcontainers.reuse.enable', 'true'
+}
+
+// ── Docker build task ─────────────────────────────────────────────────────────
+
+def imageTag  = System.getenv('IMAGE_TAG')  ?: "dev-${project.version}"
+def registry  = System.getenv('REGISTRY')   ?: 'harbor.shipping.internal'
+
+tasks.register('dockerBuild', Exec) {
+    group       = 'docker'
+    description = 'Build Docker image for this service.'
+    dependsOn   tasks.named('bootJar')
+    commandLine 'docker', 'build', '-t', "${registry}/${project.name}:${imageTag}", '.'
+    workingDir  = projectDir
+}
+
+tasks.register('dockerPush', Exec) {
+    group       = 'docker'
+    description = 'Push Docker image to registry.'
+    dependsOn   tasks.named('dockerBuild')
+    commandLine 'docker', 'push', "${registry}/${project.name}:${imageTag}"
+}

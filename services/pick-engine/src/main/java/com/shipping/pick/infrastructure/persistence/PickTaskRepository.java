@@ -55,31 +55,30 @@ public class PickTaskRepository {
 
     public void save(PickTask task) {
         session.execute(insertStmt.bind(
-            task.getPickListId(), task.getItemSeq(), task.getOrderId(),
-            task.getSku(), task.getBinLocation(), task.getQuantityRequired(),
-            task.getStatus().name()));
+            task.pickListId(), task.itemSeq(), task.orderId(),
+            task.sku(), task.binLocation(), task.quantityRequired(),
+            task.status().name()));
     }
 
     public void update(PickTask task) {
         session.execute(updateStatusStmt.bind(
-            task.getStatus().name(), task.getPickedBy(),
-            task.getPickListId(), task.getItemSeq()));
+            task.status().name(), task.pickedBy(),
+            task.pickListId(), task.itemSeq()));
     }
 
     public List<PickTask> findByPickList(String pickListId) {
         var rows = session.execute(findByListStmt.bind(pickListId));
         List<PickTask> tasks = new ArrayList<>();
         for (var row : rows) {
-            PickTask t = new PickTask();
-            t.setPickListId(row.getString("pick_list_id"));
-            t.setItemSeq(row.getInt("item_seq"));
-            t.setOrderId(row.getString("order_id"));
-            t.setSku(row.getString("sku"));
-            t.setBinLocation(row.getString("bin_location"));
-            t.setQuantityRequired(row.getInt("quantity"));
-            t.setStatus(PickTask.Status.valueOf(row.getString("status")));
-            t.setPickedBy(row.getString("picked_by"));
-            tasks.add(t);
+            tasks.add(new PickTask(
+                row.getString("pick_list_id"),
+                row.getString("order_id"),
+                row.getInt("item_seq"),
+                row.getString("sku"),
+                row.getInt("quantity"),
+                row.getString("bin_location"),
+                row.getString("picked_by"),
+                PickTask.Status.valueOf(row.getString("status"))));
         }
         return tasks;
     }
@@ -87,15 +86,15 @@ public class PickTaskRepository {
     public PickTask findByPickListAndSeq(String pickListId, int itemSeq) {
         var row = session.execute(findByListAndSeqStmt.bind(pickListId, itemSeq)).one();
         if (row == null) return null;
-        PickTask t = new PickTask();
-        t.setPickListId(row.getString("pick_list_id"));
-        t.setItemSeq(row.getInt("item_seq"));
-        t.setOrderId(row.getString("order_id"));
-        t.setSku(row.getString("sku"));
-        t.setBinLocation(row.getString("bin_location"));
-        t.setQuantityRequired(row.getInt("quantity"));
-        t.setStatus(PickTask.Status.valueOf(row.getString("status")));
-        return t;
+        return new PickTask(
+            row.getString("pick_list_id"),
+            row.getString("order_id"),
+            row.getInt("item_seq"),
+            row.getString("sku"),
+            row.getInt("quantity"),
+            row.getString("bin_location"),
+            row.getString("picked_by"),
+            PickTask.Status.valueOf(row.getString("status")));
     }
 
     /** Stub: returns the next PENDING task. Real impl adds associate routing. */

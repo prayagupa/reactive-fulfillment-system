@@ -1,0 +1,41 @@
+/**
+ * Convention plugin: clojure-service-conventions
+ * Apply to Clojure services (pack-service).
+ * Delegates to Leiningen; exposes standard Gradle lifecycle tasks.
+ */
+plugins {
+    id 'base'
+}
+
+tasks.register('leinCompile', Exec) {
+    group       = 'build'
+    commandLine 'lein', 'compile'
+    workingDir  = projectDir
+}
+
+tasks.register('leinTest', Exec) {
+    group       = 'verification'
+    commandLine 'lein', 'test'
+    workingDir  = projectDir
+}
+
+tasks.register('uberjar', Exec) {
+    group       = 'build'
+    commandLine 'lein', 'uberjar'
+    workingDir  = projectDir
+    outputs.dir layout.projectDirectory.dir('target')
+}
+
+tasks.named('assemble') { dependsOn tasks.named('uberjar') }
+tasks.named('check')    { dependsOn tasks.named('leinTest') }
+tasks.named('build')    { dependsOn tasks.named('uberjar'), tasks.named('leinTest') }
+
+def imageTag = System.getenv('IMAGE_TAG') ?: 'dev-local'
+def registry = System.getenv('REGISTRY')  ?: 'harbor.shipping.internal'
+
+tasks.register('dockerBuild', Exec) {
+    group       = 'docker'
+    dependsOn   tasks.named('uberjar')
+    commandLine 'docker', 'build', '-t', "${registry}/${project.name}:${imageTag}", '.'
+    workingDir  = projectDir
+}

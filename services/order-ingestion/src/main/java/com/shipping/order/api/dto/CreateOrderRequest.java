@@ -8,42 +8,27 @@ import jakarta.validation.constraints.Positive;
 
 import java.util.List;
 
-public class CreateOrderRequest {
+/**
+ * Inbound payload for POST /api/v1/orders.
+ * Immutable by design — use Java records so Jackson deserialises
+ * via the canonical constructor and bean-validation runs on components.
+ */
+public record CreateOrderRequest(
+        @NotBlank String customerId,
+        @NotEmpty @Valid List<ItemDto> items,
+        @NotNull  @Valid AddressDto shippingAddress,
+        String requestedDeliveryDate) {
 
-    @NotBlank
-    private String customerId;
+    public record ItemDto(
+            @NotBlank String sku,
+            @Positive int quantity,
+            @Positive double unitPrice) {}
 
-    @NotEmpty
-    @Valid
-    private List<ItemDto> items;
-
-    @NotNull
-    @Valid
-    private AddressDto shippingAddress;
-
-    private String requestedDeliveryDate;
-
-    public static class ItemDto {
-        @NotBlank public String sku;
-        @Positive  public int quantity;
-        @Positive  public double unitPrice;
-    }
-
-    public static class AddressDto {
-        @NotBlank public String line1;
-        public String line2;
-        @NotBlank public String city;
-        @NotBlank public String state;
-        @NotBlank public String postalCode;
-        @NotBlank public String countryCode;
-    }
-
-    public String getCustomerId() { return customerId; }
-    public void setCustomerId(String customerId) { this.customerId = customerId; }
-    public List<ItemDto> getItems() { return items; }
-    public void setItems(List<ItemDto> items) { this.items = items; }
-    public AddressDto getShippingAddress() { return shippingAddress; }
-    public void setShippingAddress(AddressDto shippingAddress) { this.shippingAddress = shippingAddress; }
-    public String getRequestedDeliveryDate() { return requestedDeliveryDate; }
-    public void setRequestedDeliveryDate(String requestedDeliveryDate) { this.requestedDeliveryDate = requestedDeliveryDate; }
+    public record AddressDto(
+            @NotBlank String line1,
+            String line2,
+            @NotBlank String city,
+            @NotBlank String state,
+            @NotBlank String postalCode,
+            @NotBlank String countryCode) {}
 }

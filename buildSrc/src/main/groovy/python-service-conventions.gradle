@@ -1,0 +1,55 @@
+/**
+ * Convention plugin: python-service-conventions
+ * Apply to Python services (wave-planner, replenishment).
+ * Delegates to pip/pytest/ruff; exposes standard Gradle lifecycle tasks.
+ */
+plugins {
+    id 'base'
+}
+
+def venv = layout.buildDirectory.dir('venv')
+def req  = layout.projectDirectory.file('requirements.txt')
+
+def install = tasks.register('install', Exec) {
+    group       = 'python'
+    description = 'Create virtualenv and install dependencies.'
+    outputs.dir venv
+    inputs.file req
+    commandLine 'bash', '-c',
+        "python3 -m venv ${venv.get()} && " +
+        "${venv.get()}/bin/pip install -q --upgrade pip && " +
+        "${venv.get()}/bin/pip install -q -r ${req.asFile}"
+}
+
+def lint = tasks.register('lint', Exec) {
+    group       = 'verification'
+    description = 'Lint with ruff.'
+    dependsOn   install
+    commandLine "${venv.get()}/bin/ruff", 'check', projectDir.absolutePath
+}
+
+def typecheck = tasks.register('typecheck', Exec) {
+    group       = 'verification'
+    description = 'Type-check with pyright.'
+    dependsOn   install
+    commandLine "${venv.get()}/bin/pyright", projectDir.absolutePath
+}
+
+def test = tasks.register('test', Exec) {
+    group       = 'verification'
+    description = 'Run pytest.'
+    dependsOn   install
+    commandLine "${venv.get()}/bin/pytest", projectDir.absolutePath, '--tb=short', '-q'
+}
+
+tasks.named('check')    { dependsOn lint, typecheck, test }
+tasks.named('assemble') { dependsOn install }
+
+def imageTag = System.getenv('IMAGE_TAG') ?: 'dev-local'
+def registry = System.getenv('REGISTRY')  ?: 'harbor.shipping.internal'
+
+tasks.register('dockerBuild', Exec) {
+    group       = 'docker'
+    commandLine 'docker', 'build', '-t', "${registry}/${project.name}:${imageTag}", '.'
+    workingDir  = projectDir
+}

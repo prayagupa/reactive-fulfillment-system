@@ -50,21 +50,17 @@ public class OrderService {
                 }
 
                 // 2. Build domain object
-                List<OrderItem> items = req.getItems().stream()
-                    .map(i -> new OrderItem(i.sku, i.quantity, i.unitPrice))
+                List<OrderItem> items = req.items().stream()
+                    .map(i -> new OrderItem(i.sku(), i.quantity(), i.unitPrice()))
                     .collect(Collectors.toList());
 
-                CreateOrderRequest.AddressDto a = req.getShippingAddress();
-                Address address = new Address();
-                address.setLine1(a.line1);
-                address.setLine2(a.line2);
-                address.setCity(a.city);
-                address.setState(a.state);
-                address.setPostalCode(a.postalCode);
-                address.setCountryCode(a.countryCode);
+                CreateOrderRequest.AddressDto a = req.shippingAddress();
+                Address address = new Address(
+                    a.line1(), a.line2(), a.city(),
+                    a.state(), a.postalCode(), a.countryCode());
 
-                Order order = Order.newOrder(idempotencyKey, req.getCustomerId(),
-                    items, address, req.getRequestedDeliveryDate());
+                Order order = Order.newOrder(idempotencyKey, req.customerId(),
+                    items, address, req.requestedDeliveryDate());
 
                 // 3. Persist to ScyllaDB (IF NOT EXISTS — second safety net)
                 return orderRepository.save(order)
@@ -76,9 +72,9 @@ public class OrderService {
                         // 4. Publish Kafka event
                         kafkaProducer.publishOrderReceived(order);
                         meterRegistry.counter("order.created").increment();
-                        log.info("Order created orderId={}", order.getOrderId());
+                        log.info("Order created orderId={}", order.orderId());
                         return Mono.just(new CreateOrderResponse(
-                            order.getOrderId().toString(), order.getStatus().name()));
+                            order.orderId().toString(), order.status().name()));
                     });
             });
     }
@@ -87,7 +83,7 @@ public class OrderService {
         return orderRepository.findById(UUID.fromString(orderId))
             .flatMap(opt -> opt
                 .map(o -> Mono.just(new CreateOrderResponse(
-                    o.getOrderId().toString(), o.getStatus().name())))
+                    o.orderId().toString(), o.status().name())))
                 .orElseGet(() -> Mono.error(new ResponseStatusException(
                     HttpStatus.NOT_FOUND, "Order not found: " + orderId))));
     }

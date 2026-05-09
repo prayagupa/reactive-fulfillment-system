@@ -64,13 +64,13 @@ public class OrderRepository {
     public Mono<Boolean> save(Order order) {
         return Mono.fromCallable(() -> {
             BoundStatement bound = insertStmt.bind(
-                order.getOrderId(),
-                order.getIdempotencyKey(),
-                order.getCustomerId(),
-                order.getStatus().name(),
-                order.getFcId(),
-                order.getCreatedAt(),
-                order.getUpdatedAt()
+                order.orderId(),
+                order.idempotencyKey(),
+                order.customerId(),
+                order.status().name(),
+                order.fcId(),
+                order.createdAt(),
+                order.updatedAt()
             );
             return session.execute(bound).wasApplied();
         }).subscribeOn(Schedulers.boundedElastic());
@@ -80,14 +80,17 @@ public class OrderRepository {
         return Mono.fromCallable(() -> {
             var row = session.execute(findByIdStmt.bind(orderId)).one();
             if (row == null) return Optional.<Order>empty();
-            Order o = new Order();
-            o.setOrderId(row.getUuid("order_id"));
-            o.setIdempotencyKey(row.getString("idempotency_key"));
-            o.setCustomerId(row.getString("customer_id"));
-            o.setStatus(Order.Status.valueOf(row.getString("status")));
-            o.setFcId(row.getString("fc_id"));
-            o.setCreatedAt(row.getInstant("created_at"));
-            o.setUpdatedAt(row.getInstant("updated_at"));
+            Order o = new Order(
+                row.getUuid("order_id"),
+                row.getString("idempotency_key"),
+                row.getString("customer_id"),
+                List.of(),   // items persisted separately as JSON payload
+                null,        // shippingAddress persisted separately as JSON payload
+                null,
+                Order.Status.valueOf(row.getString("status")),
+                row.getString("fc_id"),
+                row.getInstant("created_at"),
+                row.getInstant("updated_at"));
             return Optional.of(o);
         }).subscribeOn(Schedulers.boundedElastic());
     }

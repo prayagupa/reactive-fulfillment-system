@@ -34,13 +34,15 @@ public class PickTaskService {
 
     public void createTasks(PickList pickList) {
         for (var item : pickList.getItems()) {
-            PickTask task = new PickTask();
-            task.setPickListId(pickList.getPickListId().toString());
-            task.setOrderId(pickList.getOrderId().toString());
-            task.setItemSeq(item.getItemSeq());
-            task.setSku(item.getSku().toString());
-            task.setBinLocation(item.getBinLocation().toString());
-            task.setStatus(PickTask.Status.PENDING);
+            PickTask task = new PickTask(
+                pickList.getPickListId().toString(),
+                pickList.getOrderId().toString(),
+                item.getItemSeq(),
+                item.getSku().toString(),
+                0,   // quantityRequired resolved from wave data in full implementation
+                item.getBinLocation().toString(),
+                null,
+                PickTask.Status.PENDING);
             repository.save(task);
         }
         log.info("Created {} pick tasks for pickListId={}", pickList.getItems().size(), pickList.getPickListId());
@@ -61,16 +63,16 @@ public class PickTaskService {
         if (task == null) {
             return Map.of("status", "NOT_FOUND");
         }
-        if (!task.getSku().equals(scannedBarcode)) {
+        if (!task.sku().equals(scannedBarcode)) {
             meterRegistry.counter("pick.scan.mismatch").increment();
-            return Map.of("status", "MISMATCH", "expected", task.getSku(), "scanned", scannedBarcode);
+            return Map.of("status", "MISMATCH", "expected", task.sku(), "scanned", scannedBarcode);
         }
-        if (task.getQuantityRequired() != quantity) {
+        if (task.quantityRequired() != quantity) {
             return Map.of("status", "QTY_MISMATCH",
-                "expected", task.getQuantityRequired(), "scanned", quantity);
+                "expected", task.quantityRequired(), "scanned", quantity);
         }
 
-        task.setStatus(PickTask.Status.PICKED);
+        task = task.withStatus(PickTask.Status.PICKED);
         repository.update(task);
         meterRegistry.counter("pick.items.confirmed").increment();
         return Map.of("status", "OK", "itemSeq", itemSeq);
@@ -78,10 +80,10 @@ public class PickTaskService {
 
     public boolean isPickListComplete(String pickListId) {
         List<PickTask> tasks = repository.findByPickList(pickListId);
-        boolean complete = tasks.stream().allMatch(t -> t.getStatus() == PickTask.Status.PICKED);
+        boolean complete = tasks.stream().allMatch(t -> t.status() == PickTask.Status.PICKED);
 
         if (complete && !tasks.isEmpty()) {
-            String orderId = tasks.get(0).getOrderId();
+            String orderId = tasks.get(0).orderId();
             PickCompleted event = PickCompleted.newBuilder()
                 .setPickListId(pickListId)
                 .setOrderId(orderId)

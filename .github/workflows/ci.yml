@@ -21,6 +21,135 @@ jobs:
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :libs:common-events:build :libs:common-kafka:build :libs:common-security:build --no-daemon
+
+  # ── Java services ────────────────────────────────────────────────────────────
+  java-service:
+    name: Build & test ${{ matrix.service }}
+    needs: common-libs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - order-ingestion
+          - inventory
+          - pick-engine
+          - carrier-tracking
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test
+        run: ./gradlew :services:${{ matrix.service }}:check --no-daemon
+      - name: Build image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: ./gradlew :services:${{ matrix.service }}:dockerBuild --no-daemon
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+      - name: Push to Harbor
+        if: github.ref == 'refs/heads/master'
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: |
+          echo "${{ secrets.HARBOR_PASSWORD }}" | \
+            docker login ${{ env.REGISTRY }} -u ${{ secrets.HARBOR_USER }} --password-stdin
+          ./gradlew :services:${{ matrix.service }}:dockerPush --no-daemon
+
+  # ── Python services ──────────────────────────────────────────────────────────
+  python-service:
+    name: Build & test wave-planner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Check (lint + typecheck + test)
+        run: ./gradlew :services:wave-planner:check --no-daemon
+      - name: Build image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: ./gradlew :services:wave-planner:dockerBuild --no-daemon
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/wave-planner:${{ github.sha }}
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+
+  # ── Clojure service ──────────────────────────────────────────────────────────
+  clojure-service:
+    name: Build & test pack-service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeLaGuardo/setup-clojure@13
+        with:
+          lein: latest
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Test
+        run: ./gradlew :services:pack-service:check --no-daemon
+      - name: Build image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ env.REGISTRY }}
+        run: ./gradlew :services:pack-service:dockerBuild --no-daemon
+
+  # ── ArgoCD sync ─────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Sync ArgoCD → staging
+    needs: [java-service, python-service, clojure-service]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+      - name: Sync all apps
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN }} --insecure
+          argocd app sync shipping-root --async
+          argocd app wait shipping-root --timeout 300
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master, main]
+
+env:
+  REGISTRY: harbor.shipping.internal
+  JAVA_VERSION: "21"
+
+jobs:
+  # ── Shared libs ─────────────────────────────────────────────────────────────
+  common-libs:
+    name: Build common libs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
           cache: maven
       - run: |
           mvn -f libs/common-events/pom.xml install -q

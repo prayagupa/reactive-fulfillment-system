@@ -1,4 +1,8 @@
 /target
+.gradle/
+build/
+buildSrc/.gradle/
+buildSrc/build/
 .idea/
 *.iml
 /classes
