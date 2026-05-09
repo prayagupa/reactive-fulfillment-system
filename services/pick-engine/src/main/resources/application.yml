@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: pick-engine
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    schema-registry-url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+    consumer:
+      group-id: pick-engine
+  cassandra:
+    contact-points: ${SCYLLADB_CONTACT_POINTS:localhost}
+    port: ${SCYLLADB_PORT:9042}
+    keyspace-name: shipping
+    local-datacenter: datacenter1
+
+server:
+  port: 8083
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+
+otel:
+  service:
+    name: pick-engine
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4317}

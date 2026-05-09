@@ -1,0 +1,26 @@
+{
+  "type": "record",
+  "name": "OrderPacked",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted by pack-service when cartons are sealed and labels are printed.",
+  "fields": [
+    {"name": "shipmentId",     "type": "string"},
+    {"name": "orderId",        "type": "string"},
+    {"name": "fcId",           "type": "string"},
+    {"name": "trackingNumber", "type": "string"},
+    {"name": "carrier",        "type": "string"},
+    {"name": "serviceLevel",   "type": "string"},
+    {"name": "boxes",          "type": {"type": "array", "items": {
+      "type": "record", "name": "Box",
+      "fields": [
+        {"name": "boxId",       "type": "string"},
+        {"name": "weightGrams", "type": "int"},
+        {"name": "lengthMm",    "type": "int"},
+        {"name": "widthMm",     "type": "int"},
+        {"name": "heightMm",    "type": "int"}
+      ]
+    }}},
+    {"name": "labelUrl",  "type": "string", "doc": "Pre-signed MinIO URL to ZPL label"},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

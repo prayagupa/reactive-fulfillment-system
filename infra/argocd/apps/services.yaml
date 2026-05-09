@@ -1,0 +1,95 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: inventory
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: services/inventory/helm
+    helm:
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: inventory
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wave-planner
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: services/wave-planner/helm
+    helm:
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fulfillment-ops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: pick-engine
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: services/pick-engine/helm
+    helm:
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fulfillment-ops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: carrier-tracking
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: services/carrier-tracking/helm
+    helm:
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logistics
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

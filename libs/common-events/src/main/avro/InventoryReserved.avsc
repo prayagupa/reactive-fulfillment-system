@@ -1,0 +1,21 @@
+{
+  "type": "record",
+  "name": "InventoryReserved",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted when all SKUs in an order are successfully soft-reserved.",
+  "fields": [
+    {"name": "orderId",    "type": "string"},
+    {"name": "fcId",       "type": "string", "doc": "Fulfilment centre that holds the reservation"},
+    {"name": "reservations","type": {"type": "array", "items": {
+      "type": "record", "name": "Reservation",
+      "fields": [
+        {"name": "sku",      "type": "string"},
+        {"name": "quantity", "type": "int"},
+        {"name": "binLocation", "type": ["null","string"], "default": null}
+      ]
+    }}},
+    {"name": "expiresAt", "type": {"type": "long", "logicalType": "timestamp-millis"},
+     "doc": "Reservation auto-expires if not hard-allocated by this time"},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "type": "record",
+  "name": "OrderReceived",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted by order-ingestion when a new order passes validation and is persisted.",
+  "fields": [
+    {"name": "orderId",        "type": "string",  "doc": "UUID v4 – primary order identifier"},
+    {"name": "idempotencyKey", "type": "string",  "doc": "Client-supplied dedup key"},
+    {"name": "customerId",     "type": "string"},
+    {"name": "items",          "type": {"type": "array", "items": {
+      "type": "record", "name": "OrderItem",
+      "fields": [
+        {"name": "sku",      "type": "string"},
+        {"name": "quantity", "type": "int"},
+        {"name": "unitPrice","type": "double"}
+      ]
+    }}},
+    {"name": "shippingAddress", "type": {
+      "type": "record", "name": "Address",
+      "fields": [
+        {"name": "line1",      "type": "string"},
+        {"name": "line2",      "type": ["null","string"], "default": null},
+        {"name": "city",       "type": "string"},
+        {"name": "state",      "type": "string"},
+        {"name": "postalCode", "type": "string"},
+        {"name": "countryCode","type": "string"}
+      ]
+    }},
+    {"name": "requestedDeliveryDate", "type": ["null","string"], "default": null,
+     "doc": "ISO-8601 date; null means standard SLA"},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

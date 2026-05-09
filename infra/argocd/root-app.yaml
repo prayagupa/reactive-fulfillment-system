@@ -1,0 +1,25 @@
+# ArgoCD App-of-Apps root application.
+# This single ArgoCD Application watches /infra/argocd/apps/ and
+# creates one child Application per file found there.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shipping-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: infra/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

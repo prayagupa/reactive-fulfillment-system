@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "WaveReleased",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted by wave-planner when a wave is finalised and ready to send to Pick Engine.",
+  "fields": [
+    {"name": "waveId",    "type": "string"},
+    {"name": "fcId",      "type": "string"},
+    {"name": "orderIds",  "type": {"type": "array", "items": "string"}},
+    {"name": "zone",      "type": ["null","string"], "default": null},
+    {"name": "priority",  "type": "int", "doc": "1 = highest"},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

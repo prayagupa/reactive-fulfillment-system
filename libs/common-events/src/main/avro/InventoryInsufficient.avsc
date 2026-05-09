@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "InventoryInsufficient",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted when one or more SKUs cannot be reserved across any FC.",
+  "fields": [
+    {"name": "orderId",  "type": "string"},
+    {"name": "shortages","type": {"type": "array", "items": {
+      "type": "record", "name": "Shortage",
+      "fields": [
+        {"name": "sku",       "type": "string"},
+        {"name": "requested", "type": "int"},
+        {"name": "available", "type": "int"}
+      ]
+    }}},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "OrderRouted",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted by fc-router once an FC (or split FCs) are assigned to an order.",
+  "fields": [
+    {"name": "orderId",     "type": "string"},
+    {"name": "parentOrderId","type": ["null","string"], "default": null,
+     "doc": "Non-null if this is a child order produced by splitting"},
+    {"name": "fcId",        "type": "string"},
+    {"name": "routingScore","type": "double"},
+    {"name": "eventTime",   "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

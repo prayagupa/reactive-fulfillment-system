@@ -1,0 +1,19 @@
+{
+  "type": "record",
+  "name": "TrackingEvent",
+  "namespace": "com.shipping.events",
+  "doc": "Normalised carrier tracking update, regardless of originating carrier.",
+  "fields": [
+    {"name": "trackingNumber", "type": "string"},
+    {"name": "carrier",        "type": "string"},
+    {"name": "status",         "type": {
+      "type": "enum",
+      "name": "TrackingStatus",
+      "symbols": ["IN_TRANSIT","OUT_FOR_DELIVERY","DELIVERED","EXCEPTION","RETURNED"]
+    }},
+    {"name": "location",   "type": ["null","string"], "default": null},
+    {"name": "description","type": "string"},
+    {"name": "occurredAt", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "eventTime",  "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

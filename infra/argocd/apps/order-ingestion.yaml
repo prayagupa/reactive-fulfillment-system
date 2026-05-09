@@ -1,0 +1,25 @@
+# Child ArgoCD Application for order-ingestion service.
+# One file like this exists per domain service under /infra/argocd/apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: order-ingestion
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/reactive-shipping-system
+    targetRevision: HEAD
+    path: services/order-ingestion/helm
+    helm:
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: order
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master, main]
+
+env:
+  REGISTRY: harbor.shipping.internal
+  JAVA_VERSION: "21"
+
+jobs:
+  # ── Shared libs ─────────────────────────────────────────────────────────────
+  common-libs:
+    name: Build common libs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+      - run: |
+          mvn -f libs/common-events/pom.xml install -q
+          mvn -f libs/common-kafka/pom.xml install -q
+          mvn -f libs/common-security/pom.xml install -q
+
+  # ── Java services ────────────────────────────────────────────────────────────
+  java-service:
+    name: Build & test ${{ matrix.service }}
+    needs: common-libs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - order-ingestion
+          - inventory
+          - pick-engine
+          - carrier-tracking
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+      - name: Restore common libs from cache
+        run: |
+          mvn -f libs/common-events/pom.xml install -q
+          mvn -f libs/common-kafka/pom.xml install -q
+          mvn -f libs/common-security/pom.xml install -q
+      - name: Lint
+        run: mvn -f services/${{ matrix.service }}/pom.xml checkstyle:check -q
+      - name: Test (Testcontainers)
+        run: mvn -f services/${{ matrix.service }}/pom.xml verify -q
+      - name: Build image
+        run: |
+          mvn -f services/${{ matrix.service }}/pom.xml package -DskipTests -q
+          docker build -t ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }} \
+            services/${{ matrix.service }}/
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+      - name: Push to Harbor
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "${{ secrets.HARBOR_PASSWORD }}" | \
+            docker login ${{ env.REGISTRY }} -u ${{ secrets.HARBOR_USER }} --password-stdin
+          docker push ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          docker tag ${{ env.REGISTRY }}/${{ matrix.service }}:${{ github.sha }} \
+                     ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+          docker push ${{ env.REGISTRY }}/${{ matrix.service }}:latest
+
+  # ── Python services ──────────────────────────────────────────────────────────
+  python-service:
+    name: Build & test wave-planner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/wave-planner/requirements.txt
+      - name: Install
+        run: pip install -r services/wave-planner/requirements.txt
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check services/wave-planner/
+      - name: Type check
+        run: |
+          pip install pyright
+          pyright services/wave-planner/
+      - name: Test
+        run: |
+          pip install pytest pytest-asyncio
+          pytest services/wave-planner/ -q
+      - name: Build image
+        run: |
+          docker build -t ${{ env.REGISTRY }}/wave-planner:${{ github.sha }} \
+            services/wave-planner/
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/wave-planner:${{ github.sha }}
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+      - name: Push to Harbor
+        if: github.ref == 'refs/heads/master'
+        run: |
+          echo "${{ secrets.HARBOR_PASSWORD }}" | \
+            docker login ${{ env.REGISTRY }} -u ${{ secrets.HARBOR_USER }} --password-stdin
+          docker push ${{ env.REGISTRY }}/wave-planner:${{ github.sha }}
+
+  # ── ArgoCD sync ─────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Sync ArgoCD → staging
+    needs: [java-service, python-service]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+      - name: Sync all apps
+        run: |
+          argocd login ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_TOKEN }} --insecure
+          argocd app sync shipping-root --async
+          argocd app wait shipping-root --timeout 300

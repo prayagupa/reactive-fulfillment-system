@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "PickCompleted",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted when all items in a pick list have been scanned and confirmed.",
+  "fields": [
+    {"name": "pickListId", "type": "string"},
+    {"name": "orderId",    "type": "string"},
+    {"name": "fcId",       "type": "string"},
+    {"name": "pickedBy",   "type": "string", "doc": "Associate employee ID"},
+    {"name": "completedAt","type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "eventTime",  "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

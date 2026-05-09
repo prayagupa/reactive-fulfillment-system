@@ -1,0 +1,67 @@
+name: Integration Tests
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # nightly
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: End-to-end walking skeleton
+    runs-on: ubuntu-latest
+    services:
+      kafka:
+        image: confluentinc/cp-kafka:7.6.0
+        env:
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_NODE_ID: "1"
+          KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+        ports:
+          - 9092:9092
+      schema-registry:
+        image: confluentinc/cp-schema-registry:7.6.0
+        env:
+          SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+          SCHEMA_REGISTRY_HOST_NAME: schema-registry
+        ports:
+          - 8081:8081
+      scylladb:
+        image: scylladb/scylla:6.0
+        ports:
+          - 9042:9042
+        options: --health-cmd="cqlsh -e 'describe cluster'" --health-interval=10s --health-retries=10
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+      - name: Apply ScyllaDB schema
+        run: cqlsh localhost 9042 -f infra/scylladb/schema.cql
+      - name: Build all services
+        run: |
+          mvn -f libs/common-events/pom.xml install -q
+          mvn -f libs/common-kafka/pom.xml install -q
+          mvn -f libs/common-security/pom.xml install -q
+          mvn -f services/order-ingestion/pom.xml package -DskipTests -q
+          mvn -f services/inventory/pom.xml package -DskipTests -q
+          mvn -f services/pick-engine/pom.xml package -DskipTests -q
+          mvn -f services/carrier-tracking/pom.xml package -DskipTests -q
+      - name: Run e2e test suite
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          SCHEMA_REGISTRY_URL: http://localhost:8081
+          SCYLLADB_CONTACT_POINTS: localhost
+          VALKEY_HOST: localhost
+        run: mvn -f services/order-ingestion/pom.xml verify -Pe2e -q

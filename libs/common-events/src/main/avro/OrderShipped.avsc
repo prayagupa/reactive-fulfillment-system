@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "OrderShipped",
+  "namespace": "com.shipping.events",
+  "doc": "Emitted by carrier-tracking once the EDI manifest is transmitted and carrier ACKs.",
+  "fields": [
+    {"name": "orderId",        "type": "string"},
+    {"name": "shipmentId",     "type": "string"},
+    {"name": "trackingNumber", "type": "string"},
+    {"name": "carrier",        "type": "string"},
+    {"name": "estimatedDeliveryDate", "type": ["null","string"], "default": null},
+    {"name": "eventTime",      "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

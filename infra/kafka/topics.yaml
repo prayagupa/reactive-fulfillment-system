@@ -1,0 +1,108 @@
+# Kafka topic definitions — managed by Strimzi Topic Operator.
+# All topics use replication-factor=3, min.insync.replicas=2.
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: orders
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "604800000"       # 7 days
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: inventory-events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+    cleanup.policy: delete
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: picklists
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "86400000"        # 1 day — short-lived operational events
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: shipments
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: tracking-events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 24    # higher fan-out — one partition per carrier segment
+  replicas: 3
+  config:
+    retention.ms: "2592000000"      # 30 days — needed for exception detection
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: returns
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: replenishment
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 6
+  replicas: 3
+  config:
+    retention.ms: "604800000"
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: pick-events
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: shipping-kafka
+spec:
+  partitions: 12
+  replicas: 3
+  config:
+    retention.ms: "86400000"

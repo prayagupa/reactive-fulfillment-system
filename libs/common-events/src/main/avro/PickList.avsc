@@ -1,0 +1,23 @@
+{
+  "type": "record",
+  "name": "PickList",
+  "namespace": "com.shipping.events",
+  "doc": "Individual pick list for one order in a wave, delivered to Pick Engine.",
+  "fields": [
+    {"name": "pickListId", "type": "string"},
+    {"name": "waveId",     "type": "string"},
+    {"name": "orderId",    "type": "string"},
+    {"name": "fcId",       "type": "string"},
+    {"name": "items",      "type": {"type": "array", "items": {
+      "type": "record", "name": "PickItem",
+      "fields": [
+        {"name": "itemSeq",      "type": "int"},
+        {"name": "sku",          "type": "string"},
+        {"name": "quantity",     "type": "int"},
+        {"name": "binLocation",  "type": "string"},
+        {"name": "zone",         "type": "string"}
+      ]
+    }}},
+    {"name": "eventTime", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}
