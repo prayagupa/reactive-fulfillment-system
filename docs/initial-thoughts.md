@@ -1,0 +1,1 @@
+create a PRD for a warehouse fulfilment system of Amazon scale. The system should be able to handle a large number of orders, manage inventory, and optimize the picking and packing process, delivery.
