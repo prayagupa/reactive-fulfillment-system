@@ -18,6 +18,7 @@ import java.util.List;
  *     pick_list_id    TEXT,
  *     item_seq        INT,
  *     order_id        TEXT,
+ *     fc_id           TEXT,
  *     sku             TEXT,
  *     bin_location    TEXT,
  *     quantity        INT,
@@ -43,8 +44,8 @@ public class PickTaskRepository {
     @PostConstruct
     void prepare() {
         insertStmt = session.prepare(
-            "INSERT INTO pick_tasks (pick_list_id, item_seq, order_id, sku, bin_location, quantity, status) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?)");
+            "INSERT INTO pick_tasks (pick_list_id, item_seq, order_id, fc_id, sku, bin_location, quantity, status) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         findByListStmt = session.prepare(
             "SELECT * FROM pick_tasks WHERE pick_list_id = ?");
         findByListAndSeqStmt = session.prepare(
@@ -55,7 +56,7 @@ public class PickTaskRepository {
 
     public void save(PickTask task) {
         session.execute(insertStmt.bind(
-            task.pickListId(), task.itemSeq(), task.orderId(),
+            task.pickListId(), task.itemSeq(), task.orderId(), task.fcId(),
             task.sku(), task.binLocation(), task.quantityRequired(),
             task.status().name()));
     }
@@ -73,6 +74,7 @@ public class PickTaskRepository {
             tasks.add(new PickTask(
                 row.getString("pick_list_id"),
                 row.getString("order_id"),
+                row.getString("fc_id"),
                 row.getInt("item_seq"),
                 row.getString("sku"),
                 row.getInt("quantity"),
@@ -89,6 +91,7 @@ public class PickTaskRepository {
         return new PickTask(
             row.getString("pick_list_id"),
             row.getString("order_id"),
+            row.getString("fc_id"),
             row.getInt("item_seq"),
             row.getString("sku"),
             row.getInt("quantity"),
@@ -102,3 +105,4 @@ public class PickTaskRepository {
         return null; // TODO: query by status = PENDING LIMIT 1 with token-range pagination
     }
 }
+

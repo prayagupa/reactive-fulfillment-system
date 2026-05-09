@@ -4,8 +4,8 @@ springBoot         = "4.0.0"
 springKafka        = "4.0.0"
 avro               = "1.11.3"
 confluent          = "7.6.0"
-cassandraDriver    = "4.18.0"
-otelAgent          = "2.3.0"
+cassandraDriver    = "4.17.0"
+otelAgent          = "2.16.0"
 micrometer         = "1.14.0"
 camel              = "4.6.0"
 testcontainers     = "1.19.7"
@@ -15,18 +15,20 @@ junitJupiter       = "5.11.0"
 mockito            = "5.11.0"
 
 [libraries]
-spring-boot-webflux        = { module = "org.springframework.boot:spring-boot-starter-webflux" }
-spring-boot-web            = { module = "org.springframework.boot:spring-boot-starter-web" }
-spring-boot-websocket      = { module = "org.springframework.boot:spring-boot-starter-websocket" }
-spring-boot-validation     = { module = "org.springframework.boot:spring-boot-starter-validation" }
-spring-boot-actuator       = { module = "org.springframework.boot:spring-boot-starter-actuator" }
-spring-boot-redis-reactive = { module = "org.springframework.boot:spring-boot-starter-data-redis-reactive" }
-spring-boot-redis          = { module = "org.springframework.boot:spring-boot-starter-data-redis" }
-spring-boot-autoconfigure  = { module = "org.springframework.boot:spring-boot-autoconfigure" }
-spring-boot-test           = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-webflux        = { module = "org.springframework.boot:spring-boot-starter-webflux",            version.ref = "springBoot" }
+spring-boot-web            = { module = "org.springframework.boot:spring-boot-starter-web",                version.ref = "springBoot" }
+spring-boot-security       = { module = "org.springframework.boot:spring-boot-starter-security",           version.ref = "springBoot" }
+spring-boot-websocket      = { module = "org.springframework.boot:spring-boot-starter-websocket",          version.ref = "springBoot" }
+spring-boot-validation     = { module = "org.springframework.boot:spring-boot-starter-validation",         version.ref = "springBoot" }
+spring-boot-actuator       = { module = "org.springframework.boot:spring-boot-starter-actuator",           version.ref = "springBoot" }
+spring-boot-redis-reactive = { module = "org.springframework.boot:spring-boot-starter-data-redis-reactive", version.ref = "springBoot" }
+spring-boot-redis          = { module = "org.springframework.boot:spring-boot-starter-data-redis",         version.ref = "springBoot" }
+spring-boot-autoconfigure  = { module = "org.springframework.boot:spring-boot-autoconfigure",              version.ref = "springBoot" }
+spring-boot-test           = { module = "org.springframework.boot:spring-boot-starter-test",               version.ref = "springBoot" }
 spring-kafka               = { module = "org.springframework.kafka:spring-kafka", version.ref = "springKafka" }
 
 avro                       = { module = "org.apache.avro:avro",                         version.ref = "avro" }
+avro-tools                 = { module = "org.apache.avro:avro-tools",                    version.ref = "avro" }
 avro-maven-plugin          = { module = "org.apache.avro:avro-maven-plugin",             version.ref = "avro" }
 confluent-avro-serializer  = { module = "io.confluent:kafka-avro-serializer",            version.ref = "confluent" }
 

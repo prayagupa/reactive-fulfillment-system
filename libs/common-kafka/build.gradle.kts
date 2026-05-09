@@ -9,7 +9,7 @@ dependencies {
     api(libs.spring.boot.autoconfigure)
     api(libs.spring.kafka)
     api(libs.confluent.avro.serializer)
-    api(libs.otel.spring.starter)
+    api(libs.micrometer.prometheus)
     api(project(":libs:common-events"))
 
     testImplementation(libs.spring.boot.test)

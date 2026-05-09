@@ -12,7 +12,6 @@ dependencies {
     implementation(libs.confluent.avro.serializer)
     implementation(libs.cassandra.driver.core)
     implementation(libs.camel.spring.boot)
-    implementation(libs.camel.edi)
     implementation(libs.camel.ftp)
     implementation(libs.micrometer.prometheus)
     implementation(libs.otel.spring.starter)

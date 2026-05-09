@@ -19,10 +19,10 @@ public class EdiManifestRoute extends RouteBuilder {
     public void configure() {
 
         // ── Outbound: transmit X12 856 ASN ────────────────────────────────────
+        // The body arrives as a pre-built X12 string from TransmitManifestCommandHandler.
         from("direct:transmit-manifest")
             .routeId("manifest-transmit")
             .log("Transmitting EDI X12 856 ASN for shipmentId=${header.shipmentId}")
-            .marshal().edi("X12", "856")
             .choice()
                 .when(simple("${properties:carrier.edi.mode} == 'sftp'"))
                     .toD("sftp:{{carrier.edi.sftp.host}}:{{carrier.edi.sftp.port}}"
@@ -36,10 +36,10 @@ public class EdiManifestRoute extends RouteBuilder {
             .log("EDI transmission complete for shipmentId=${header.shipmentId}");
 
         // ── Inbound: receive X12 997 ACK from carrier ─────────────────────────
+        // ACK arrives as a raw text file; delegated to ackProcessor for parsing.
         from("file:{{carrier.edi.ack.drop:./edi-ack}}?noop=true&include=.*\\.997")
             .routeId("manifest-ack")
             .log("Received X12 997 ACK: ${header.CamelFileName}")
-            .unmarshal().edi("X12", "997")
             .bean("ackProcessor", "processAck");
     }
 }

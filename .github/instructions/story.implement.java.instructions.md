@@ -10,6 +10,7 @@ applyTo: "services/**/*.java,libs/**/*.java"
 - Nested DTOs (e.g. `ItemDto`, `AddressDto`) must also be records, declared as inner types of the outer record.
 - Place bean-validation annotations (`@NotBlank`, `@NotNull`, `@Positive`, `@Valid`, etc.) directly on the record component parameter, not on a field.
 - **Do NOT** create mutable JavaBean DTOs with private fields + getters/setters.
+- always use multiline String for java instead of concatenation.
 
 ### Example
 ```java

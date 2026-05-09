@@ -1,11 +1,16 @@
 package com.shipping.inventory.application.command;
 
+import com.shipping.cqrs.AggregateResult;
+import com.shipping.cqrs.CommandHandler;
 import com.shipping.events.InventoryInsufficient;
 import com.shipping.events.InventoryReserved;
 import com.shipping.events.OrderReceived;
 import com.shipping.events.Reservation;
 import com.shipping.events.Shortage;
-import com.shipping.cqrs.CommandHandler;
+import com.shipping.inventory.domain.event.InventoryDomainEvent;
+import com.shipping.inventory.domain.event.InventoryInsufficientEvent;
+import com.shipping.inventory.domain.event.InventoryReservedEvent;
+import com.shipping.inventory.domain.model.StockLedger;
 import com.shipping.inventory.infrastructure.persistence.InventoryRepository;
 import com.shipping.kafka.producer.DomainEventPublisher;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -22,13 +27,14 @@ import java.util.List;
 
 /**
  * CQRS write side: handles {@link ReserveInventoryCommand}.
- * <p>
- * Attempts a soft-reservation for every item in the order using:
+ *
+ * <p>Four-step thin coordinator:
  * <ol>
- *   <li>Valkey atomic Lua check-and-decrement (fast path)</li>
- *   <li>ScyllaDB LWT fallback on cache miss</li>
+ *   <li>Load — fetch {@link StockLedger} for each SKU</li>
+ *   <li>Decide — call {@code ledger.reserve()} to get domain events</li>
+ *   <li>Save — atomically persist via Valkey Lua fast path + ScyllaDB LWT fallback</li>
+ *   <li>Publish — map per-item domain events → one Avro envelope per order</li>
  * </ol>
- * Publishes {@code InventoryReserved} or {@code InventoryInsufficient} to Kafka.
  */
 @Service
 public class ReserveInventoryCommandHandler
@@ -65,61 +71,102 @@ public class ReserveInventoryCommandHandler
     public Void handle(ReserveInventoryCommand cmd) {
         OrderReceived order = cmd.order();
         String fcId = inventoryRepository.findBestFc(order);
-        List<Reservation> reservations = new ArrayList<>();
-        List<Shortage> shortages = new ArrayList<>();
+
+        List<InventoryReservedEvent> reserved = new ArrayList<>();
+        List<InventoryInsufficientEvent> insufficient = new ArrayList<>();
 
         DefaultRedisScript<Long> script = new DefaultRedisScript<>(RESERVE_LUA, Long.class);
 
         for (var item : order.getItems()) {
-            String key = "inv:" + fcId + ":" + item.getSku();
-            Long result = redisTemplate.execute(script, List.of(key), String.valueOf(item.getQuantity()));
+            String sku = item.getSku().toString();
+            int qty  = item.getQuantity();
 
-            if (result == null || result < 0) {
-                int available = inventoryRepository.getAvailable(fcId, item.getSku().toString());
-                if (available < item.getQuantity()) {
-                    shortages.add(Shortage.newBuilder()
-                        .setSku(item.getSku().toString())
-                        .setRequested(item.getQuantity())
-                        .setAvailable(available)
-                        .build());
-                } else {
-                    inventoryRepository.softReserve(fcId, item.getSku().toString(), item.getQuantity());
-                    reservations.add(Reservation.newBuilder()
-                        .setSku(item.getSku().toString())
-                        .setQuantity(item.getQuantity())
-                        .setBinLocation(null)
-                        .build());
-                }
-            } else {
-                reservations.add(Reservation.newBuilder()
-                    .setSku(item.getSku().toString())
-                    .setQuantity(item.getQuantity())
-                    .setBinLocation(null)
-                    .build());
+            // ── Step 1: Load aggregate ──────────────────────────────────────
+            StockLedger ledger = inventoryRepository.findStockLedger(fcId, sku);
+
+            // ── Step 2: Domain decision ─────────────────────────────────────
+            AggregateResult<StockLedger, InventoryDomainEvent> result = ledger.reserve(qty);
+
+            // ── Step 3: Persist (only on success path) ──────────────────────
+            switch (result.events().getFirst()) {
+                case InventoryReservedEvent e -> atomicReserve(script, fcId, sku, qty);
+                case InventoryInsufficientEvent ignored -> { /* nothing to persist */ }
             }
+
+            // ── Collect per-item domain events ──────────────────────────────
+            result.events().forEach(e -> {
+                switch (e) {
+                    case InventoryReservedEvent ev   -> reserved.add(ev);
+                    case InventoryInsufficientEvent ev -> insufficient.add(ev);
+                }
+            });
         }
 
-        if (!shortages.isEmpty()) {
-            InventoryInsufficient event = InventoryInsufficient.newBuilder()
-                .setOrderId(order.getOrderId().toString())
-                .setShortages(shortages)
-                .setEventTime(Instant.now().toEpochMilli())
-                .build();
-            publisher.publish(INVENTORY_EVENTS_TOPIC, order.getOrderId().toString(), event);
-            meterRegistry.counter("inventory.reservation.insufficient").increment();
-            log.warn("Inventory insufficient orderId={}", order.getOrderId());
+        // ── Step 4: Publish one Avro envelope per order ─────────────────────
+        if (!insufficient.isEmpty()) {
+            publishInsufficient(order, insufficient);
         } else {
-            InventoryReserved event = InventoryReserved.newBuilder()
-                .setOrderId(order.getOrderId().toString())
-                .setFcId(fcId)
-                .setReservations(reservations)
-                .setExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES).toEpochMilli())
-                .setEventTime(Instant.now().toEpochMilli())
-                .build();
-            publisher.publish(INVENTORY_EVENTS_TOPIC, order.getOrderId().toString(), event);
-            meterRegistry.counter("inventory.reservation.success").increment();
-            log.info("Inventory reserved orderId={}", order.getOrderId());
+            publishReserved(order, fcId, reserved);
         }
+
         return null;
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Attempts Valkey Lua fast path; falls back to ScyllaDB LWT on cache miss.
+     */
+    private void atomicReserve(DefaultRedisScript<Long> script, String fcId, String sku, int qty) {
+        String key = "inv:" + fcId + ":" + sku;
+        Long luaResult = redisTemplate.execute(script, List.of(key), String.valueOf(qty));
+        if (luaResult == null || luaResult < 0) {
+            // Cache miss — fall through to ScyllaDB LWT
+            inventoryRepository.softReserve(fcId, sku, qty);
+        }
+    }
+
+    private void publishReserved(OrderReceived order, String fcId,
+                                 List<InventoryReservedEvent> events) {
+        List<Reservation> avroReservations = events.stream()
+            .map(e -> Reservation.newBuilder()
+                .setSku(e.sku())
+                .setQuantity(e.quantityReserved())
+                .setBinLocation(null)
+                .build())
+            .toList();
+
+        InventoryReserved avro = InventoryReserved.newBuilder()
+            .setOrderId(order.getOrderId().toString())
+            .setFcId(fcId)
+            .setReservations(avroReservations)
+            .setExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES))
+            .setEventTime(Instant.now())
+            .build();
+
+        publisher.publish(INVENTORY_EVENTS_TOPIC, order.getOrderId().toString(), avro);
+        meterRegistry.counter("inventory.reservation.success").increment();
+        log.info("Inventory reserved orderId={} fcId={} items={}", order.getOrderId(), fcId, events.size());
+    }
+
+    private void publishInsufficient(OrderReceived order,
+                                     List<InventoryInsufficientEvent> events) {
+        List<Shortage> avroShortages = events.stream()
+            .map(e -> Shortage.newBuilder()
+                .setSku(e.sku())
+                .setRequested(e.requested())
+                .setAvailable(e.available())
+                .build())
+            .toList();
+
+        InventoryInsufficient avro = InventoryInsufficient.newBuilder()
+            .setOrderId(order.getOrderId().toString())
+            .setShortages(avroShortages)
+            .setEventTime(Instant.now())
+            .build();
+
+        publisher.publish(INVENTORY_EVENTS_TOPIC, order.getOrderId().toString(), avro);
+        meterRegistry.counter("inventory.reservation.insufficient").increment();
+        log.warn("Inventory insufficient orderId={} shortages={}", order.getOrderId(), events.size());
     }
 }

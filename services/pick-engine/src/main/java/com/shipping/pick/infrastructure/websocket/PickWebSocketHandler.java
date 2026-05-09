@@ -86,6 +86,3 @@ public class PickWebSocketHandler extends TextWebSocketHandler {
         log.info("Pick device disconnected sessionId={}", session.getId());
     }
 }
-        log.info("Pick device disconnected sessionId={} status={}", session.getId(), status);
-    }
-}

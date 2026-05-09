@@ -13,9 +13,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  */
 public class JwtValidationFilter extends OncePerRequestFilter {
 
-    private final Key signingKey;
+    private final SecretKey signingKey;
 
     public JwtValidationFilter(String base64Secret) {
         this.signingKey = Keys.hmacShaKeyFor(base64Secret.getBytes(StandardCharsets.UTF_8));
@@ -50,11 +50,11 @@ public class JwtValidationFilter extends OncePerRequestFilter {
         String token = header.substring(7);
 
         try {
-            Claims claims = Jwts.parserBuilder()
-                    .setSigningKey(signingKey)
+            Claims claims = Jwts.parser()
+                    .verifyWith(signingKey)
                     .build()
-                    .parseClaimsJws(token)
-                    .getBody();
+                    .parseSignedClaims(token)
+                    .getPayload();
 
             @SuppressWarnings("unchecked")
             List<String> roles = claims.get("roles", List.class);
