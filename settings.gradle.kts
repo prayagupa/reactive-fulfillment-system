@@ -21,6 +21,7 @@ rootProject.name = "reactive-shipping-system"
 include(":libs:common-events")
 include(":libs:common-kafka")
 include(":libs:common-security")
+include(":libs:common-cqrs")
 
 // ── Services ──────────────────────────────────────────────────────────────────
 include(":services:order-ingestion")

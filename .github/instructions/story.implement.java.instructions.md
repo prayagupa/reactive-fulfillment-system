@@ -91,6 +91,74 @@ public class Order {
 - In repositories, reconstruct domain records using their canonical constructor (all fields provided); **do not use setters**.
 - In services, reassign the local variable when applying a wither: `task = task.withStatus(PICKED);`
 
+## CQRS (Command Query Responsibility Segregation)
+Every service uses an in-process CQRS model. **Do not put both read and write logic in the same class.**
+
+### Shared library
+The four CQRS interfaces live in **`libs/common-cqrs`** (`com.shipping.cqrs` package):
+- `Command` — write-side marker
+- `Query<R>` — read-side marker with return type
+- `CommandHandler<C, R>` — `@FunctionalInterface`, one per command type
+- `QueryHandler<Q, R>` — `@FunctionalInterface`, one per query type
+
+Add `implementation(project(":libs:common-cqrs"))` to the service `build.gradle.kts`.
+**Do NOT** copy or re-declare these interfaces inside a service's own packages.
+
+### Package structure (per service)
+```
+application/
+  command/
+    XxxCommand.java        ← record implements com.shipping.cqrs.Command
+    XxxCommandHandler.java ← @Service implements CommandHandler<XxxCommand, R>
+  query/
+    XxxQuery.java          ← record implements com.shipping.cqrs.Query<R>
+    XxxQueryHandler.java   ← @Service implements QueryHandler<XxxQuery, R>
+    XxxResult.java         ← read-model record (if needed)
+```
+
+### Rules
+- **Commands** (write side): one command per intent (e.g. `CreateOrderCommand`, `ConfirmScanCommand`). Command records are immutable and hold exactly the data needed to execute the intent.
+- **Queries** (read side): one query per read concern (e.g. `GetOrderQuery`, `GetStockQuery`). Query records carry only the lookup keys. Return a **read-model record** (`XxxResult`, `XxxView`) — never return a mutable domain entity from a query handler.
+- **Command handlers** may publish Kafka events and mutate state (via repository). They must **not** return domain data beyond a minimal acknowledgement.
+- **Query handlers** must **not** publish events or mutate state.
+- Controllers and Kafka consumers inject specific handlers directly — **no `*Service` god-class**.
+- Old `*Service` classes that have been split are marked `@Deprecated(forRemoval = true)` and left empty.
+
+### Example
+```java
+// Command record
+public record CreateOrderCommand(String idempotencyKey, CreateOrderRequest request)
+        implements com.shipping.cqrs.Command {}
+
+// Command handler
+@Service
+public class CreateOrderCommandHandler
+        implements CommandHandler<CreateOrderCommand, Mono<CreateOrderResponse>> {
+
+    @Override
+    public Mono<CreateOrderResponse> handle(CreateOrderCommand cmd) { ... }
+}
+
+// Query record
+public record GetOrderQuery(String orderId) implements Query<CreateOrderResponse> {}
+
+// Query handler
+@Service
+public class GetOrderQueryHandler
+        implements QueryHandler<GetOrderQuery, Mono<CreateOrderResponse>> {
+
+    @Override
+    public Mono<CreateOrderResponse> handle(GetOrderQuery query) { ... }
+}
+
+// Controller — injects handlers directly, no service layer
+@RestController
+public class OrderController {
+    public OrderController(CreateOrderCommandHandler createOrderHandler,
+                           GetOrderQueryHandler getOrderHandler) { ... }
+}
+```
+
 ## Reactive style
 - Use `Mono<T>` / `Flux<T>` (Project Reactor) in service and controller layers.
 - Avoid blocking calls inside reactive chains.
@@ -99,4 +167,4 @@ public class Order {
 - Prefer constructor injection; do not use field injection (`@Autowired` on a field).
 
 ## Java version
-- Target Java 25 (`--release 25`). Use records, sealed interfaces, pattern matching, text blocks, and switch expressions where appropriate.
+- Target Java 21 (`--release 21`). Use records, sealed interfaces, pattern matching, text blocks, and switch expressions where appropriate.

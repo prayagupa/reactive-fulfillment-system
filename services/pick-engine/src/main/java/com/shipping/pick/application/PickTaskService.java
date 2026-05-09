@@ -1,18 +1,17 @@
 package com.shipping.pick.application;
 
-import com.shipping.events.PickCompleted;
-import com.shipping.events.PickList;
-import com.shipping.kafka.producer.DomainEventPublisher;
-import com.shipping.pick.domain.model.PickTask;
-import com.shipping.pick.infrastructure.persistence.PickTaskRepository;
-import io.micrometer.core.instrument.MeterRegistry;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
+/**
+ * @deprecated Superseded by CQRS split:
+ * <ul>
+ *   <li>Write side: {@link com.shipping.pick.application.command.CreatePickTasksCommandHandler}</li>
+ *   <li>Write side: {@link com.shipping.pick.application.command.ConfirmScanCommandHandler}</li>
+ *   <li>Read  side: {@link com.shipping.pick.application.query.NextTaskQueryHandler}</li>
+ *   <li>Read  side: {@link com.shipping.pick.application.query.PickListStatusQueryHandler}</li>
+ * </ul>
+ * This class is retained only to preserve git history; it is no longer wired into the application context.
+ */
+@Deprecated(forRemoval = true)
+public final class PickTaskService {}
 
 @Service
 public class PickTaskService {

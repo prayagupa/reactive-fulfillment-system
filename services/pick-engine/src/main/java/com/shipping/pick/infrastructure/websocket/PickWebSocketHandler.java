@@ -1,7 +1,10 @@
 package com.shipping.pick.infrastructure.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.shipping.pick.application.PickTaskService;
+import com.shipping.pick.application.command.ConfirmScanCommand;
+import com.shipping.pick.application.command.ConfirmScanCommandHandler;
+import com.shipping.pick.application.query.NextTaskQuery;
+import com.shipping.pick.application.query.NextTaskQueryHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -28,11 +31,14 @@ public class PickWebSocketHandler extends TextWebSocketHandler {
 
     // sessionId → associateId
     private final Map<String, String> sessions = new ConcurrentHashMap<>();
-    private final PickTaskService pickTaskService;
+    private final ConfirmScanCommandHandler confirmScanHandler;
+    private final NextTaskQueryHandler nextTaskHandler;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public PickWebSocketHandler(PickTaskService pickTaskService) {
-        this.pickTaskService = pickTaskService;
+    public PickWebSocketHandler(ConfirmScanCommandHandler confirmScanHandler,
+                                NextTaskQueryHandler nextTaskHandler) {
+        this.confirmScanHandler = confirmScanHandler;
+        this.nextTaskHandler = nextTaskHandler;
     }
 
     @Override
@@ -50,23 +56,22 @@ public class PickWebSocketHandler extends TextWebSocketHandler {
             case "connect" -> {
                 String associateId = (String) payload.get("associateId");
                 sessions.put(session.getId(), associateId);
-                // Send next pending task for this associate
-                var task = pickTaskService.nextTaskForAssociate(associateId);
+                var task = nextTaskHandler.handle(new NextTaskQuery(associateId));
                 if (task != null) {
                     session.sendMessage(new TextMessage(mapper.writeValueAsString(task)));
                 }
             }
             case "scan" -> {
-                String pickListId = (String) payload.get("pickListId");
-                int itemSeq = (int) payload.get("itemSeq");
+                String pickListId    = (String) payload.get("pickListId");
+                int    itemSeq       = (int)    payload.get("itemSeq");
                 String scannedBarcode = (String) payload.get("barcode");
-                int quantity = (int) payload.get("quantity");
+                int    quantity      = (int)    payload.get("quantity");
 
-                var result = pickTaskService.confirmScan(pickListId, itemSeq, scannedBarcode, quantity);
+                var result = confirmScanHandler.handle(
+                    new ConfirmScanCommand(pickListId, itemSeq, scannedBarcode, quantity));
                 session.sendMessage(new TextMessage(mapper.writeValueAsString(result)));
 
-                // Check if pick list is now complete
-                if (pickTaskService.isPickListComplete(pickListId)) {
+                if (Boolean.TRUE.equals(result.get("pickListComplete"))) {
                     session.sendMessage(new TextMessage(
                         mapper.writeValueAsString(Map.of("status", "COMPLETE", "pickListId", pickListId))));
                 }
@@ -78,6 +83,9 @@ public class PickWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session.getId());
+        log.info("Pick device disconnected sessionId={}", session.getId());
+    }
+}
         log.info("Pick device disconnected sessionId={} status={}", session.getId(), status);
     }
 }

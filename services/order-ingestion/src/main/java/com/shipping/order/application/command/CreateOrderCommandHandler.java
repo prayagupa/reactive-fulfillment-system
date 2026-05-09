@@ -1,47 +1,67 @@
-package com.shipping.order.application;
+package com.shipping.order.application.command;
+
+import com.shipping.order.api.dto.CreateOrderRequest;
+import com.shipping.order.api.dto.CreateOrderResponse;
+import com.shipping.cqrs.CommandHandler;
+import com.shipping.order.domain.model.Address;
+import com.shipping.order.domain.model.Order;
+import com.shipping.order.domain.model.OrderItem;
+import com.shipping.order.infrastructure.kafka.OrderKafkaProducer;
+import com.shipping.order.infrastructure.persistence.OrderRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * @deprecated Superseded by CQRS split:
- * <ul>
- *   <li>Write side: {@link com.shipping.order.application.command.CreateOrderCommandHandler}</li>
- *   <li>Read  side: {@link com.shipping.order.application.query.GetOrderQueryHandler}</li>
- * </ul>
- * This class is retained only to preserve git history; it is no longer wired into the application context.
+ * CQRS write side: handles {@link CreateOrderCommand}.
+ * <p>
+ * Responsibilities:
+ * <ol>
+ *   <li>Idempotency guard via ScyllaDB LWT</li>
+ *   <li>Build the {@link Order} domain record</li>
+ *   <li>Persist to ScyllaDB (IF NOT EXISTS)</li>
+ *   <li>Publish {@code OrderReceived} event to Kafka</li>
+ * </ol>
  */
-@Deprecated(forRemoval = true)
-public final class OrderService {}
-
 @Service
-public class OrderService {
+public class CreateOrderCommandHandler
+        implements CommandHandler<CreateOrderCommand, Mono<CreateOrderResponse>> {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+    private static final Logger log = LoggerFactory.getLogger(CreateOrderCommandHandler.class);
 
     private final OrderRepository orderRepository;
     private final OrderKafkaProducer kafkaProducer;
     private final MeterRegistry meterRegistry;
 
-    public OrderService(OrderRepository orderRepository,
-                        OrderKafkaProducer kafkaProducer,
-                        MeterRegistry meterRegistry) {
+    public CreateOrderCommandHandler(OrderRepository orderRepository,
+                                     OrderKafkaProducer kafkaProducer,
+                                     MeterRegistry meterRegistry) {
         this.orderRepository = orderRepository;
         this.kafkaProducer = kafkaProducer;
         this.meterRegistry = meterRegistry;
     }
 
-    public Mono<CreateOrderResponse> createOrder(String idempotencyKey,
-                                                  CreateOrderRequest req) {
-        // 1. Idempotency check via ScyllaDB
+    @Override
+    public Mono<CreateOrderResponse> handle(CreateOrderCommand cmd) {
+        String idempotencyKey = cmd.idempotencyKey();
+        CreateOrderRequest req = cmd.request();
+
         return orderRepository.findByIdempotencyKey(idempotencyKey)
             .flatMap(exists -> {
                 if (exists) {
                     log.info("Duplicate order request, idempotencyKey={}", idempotencyKey);
                     meterRegistry.counter("order.duplicate").increment();
-                    // Return existing order (simplified: return 202 with idempotency signal)
                     return Mono.error(new ResponseStatusException(HttpStatus.CONFLICT,
                         "Order already received for idempotency key: " + idempotencyKey));
                 }
 
-                // 2. Build domain object
                 List<OrderItem> items = req.items().stream()
                     .map(i -> new OrderItem(i.sku(), i.quantity(), i.unitPrice()))
                     .collect(Collectors.toList());
@@ -54,14 +74,12 @@ public class OrderService {
                 Order order = Order.newOrder(idempotencyKey, req.customerId(),
                     items, address, req.requestedDeliveryDate());
 
-                // 3. Persist to ScyllaDB (IF NOT EXISTS — second safety net)
                 return orderRepository.save(order)
                     .flatMap(saved -> {
                         if (!saved) {
                             return Mono.error(new ResponseStatusException(HttpStatus.CONFLICT,
                                 "Concurrent duplicate detected"));
                         }
-                        // 4. Publish Kafka event
                         kafkaProducer.publishOrderReceived(order);
                         meterRegistry.counter("order.created").increment();
                         log.info("Order created orderId={}", order.orderId());
@@ -69,14 +87,5 @@ public class OrderService {
                             order.orderId().toString(), order.status().name()));
                     });
             });
-    }
-
-    public Mono<CreateOrderResponse> getOrder(String orderId) {
-        return orderRepository.findById(UUID.fromString(orderId))
-            .flatMap(opt -> opt
-                .map(o -> Mono.just(new CreateOrderResponse(
-                    o.orderId().toString(), o.status().name())))
-                .orElseGet(() -> Mono.error(new ResponseStatusException(
-                    HttpStatus.NOT_FOUND, "Order not found: " + orderId))));
     }
 }

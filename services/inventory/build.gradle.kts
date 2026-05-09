@@ -16,6 +16,7 @@ dependencies {
     implementation(libs.otel.spring.starter)
     implementation(project(":libs:common-events"))
     implementation(project(":libs:common-kafka"))
+    implementation(project(":libs:common-cqrs"))
 
     testImplementation(libs.spring.boot.test)
     testImplementation(libs.testcontainers.kafka)
